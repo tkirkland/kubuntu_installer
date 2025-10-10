@@ -1,0 +1,15 @@
+#!/bin/bash
+# Starts the Kubuntu OEM Environment.
+export XDG_SESSION_CLASS="user"
+export XDG_SESSION_DESKTOP="KDE"
+export DESKTOP_SESSION="plasma"
+export QT_QPA_PLATFORMTHEME="kde"
+export BROWSER='sudo -H -u kubuntu firefox'
+
+/usr/bin/kwin_wayland --no-lockscreen &
+while [ ! -e "/run/user/$(id -u)/wayland-0" ]; do sleep 1; done
+/usr/bin/basicwallpaper /usr/share/wallpapers/Next/contents/3840x2160.png &
+WAYLAND_DISPLAY="wayland-0" sudo -E /usr/bin/calamares -D8 # This is intentionally *not* backgrounded.
+# If it exits...
+killall basicwallpaper
+killall kwin_wayland

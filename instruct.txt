@@ -1,0 +1,175 @@
+✅ Arch Linux ZFS Root Install with systemd-boot + UKI (using LTS ISO)
+
+Configuration:
+- Boot Mode: UEFI
+- Bootloader: systemd-boot
+- Initramfs Tool: mkinitcpio
+- ZFS Hook: sd-zfs from AUR (mkinitcpio-sd-zfs-poscat)
+- Kernel: linux-lts + zfs-linux-lts module
+- Root Filesystem: ZFS native datasets
+- Host ID: required for proper zpool import
+
+Boot from ISO
+=============
+Boot using the ISO from:
+➡️ https://github.com/r-maerz/archlinux-lts-zfs
+
+This already includes the ZFS modules and archzfs repo.
+
+Initial Setup
+=============
+ping archlinux.org
+timedatectl set-ntp true
+
+Partition Disk
+==============
+parted /dev/sdX -- mklabel gpt
+parted /dev/sdX -- mkpart ESP fat32 1MiB 512MiB
+parted /dev/sdX -- set 1 esp on
+parted /dev/sdX -- mkpart primary 512MiB 100%
+
+mkfs.fat -F32 /dev/sdX1
+
+Load ZFS Module
+===============
+Should already be loaded, but if not:
+modprobe zfs
+
+Mount Points
+============
+mkdir -p /mnt/{efi,home,var/log,var/cache}
+
+Create ZFS Pool and Datasets
+=============================
+blkid /dev/sdX2
+
+Replace <partuuid> below with actual PARTUUID:
+
+zpool create -f -o ashift=12 -o autotrim=on -O mountpoint=none -O acltype=posixacl -O atime=off -O relatime=off -O xattr=sa -O normalization=formD -R /mnt rpool /dev/disk/by-partuuid/<partuuid>
+
+zfs create -o compression=lz4 -o canmount=off -o mountpoint=none rpool/ROOT
+zfs create -o compression=lz4 -o canmount=noauto -o mountpoint=/ rpool/ROOT/arch
+zfs create -o compression=lz4 -o mountpoint=/home rpool/ROOT/arch/home
+zfs create -o compression=lz4 -o mountpoint=/var/cache rpool/ROOT/arch/varcache
+zfs create -o compression=lz4 -o mountpoint=/var/log rpool/ROOT/arch/varlog
+
+zfs mount rpool/ROOT/arch
+zfs mount -a
+
+mount /dev/sdX1 /mnt/efi
+
+Install Base System
+===================
+pacstrap -K /mnt base linux-lts zfs-linux-lts zfs-utils linux-firmware intel-ucode sof-firmware base-devel git neovim plymouth
+
+genfstab -U /mnt | grep /efi >> /mnt/etc/fstab
+
+arch-chroot /mnt
+
+Configure System
+================
+ln -sf /usr/share/zoneinfo/Europe/Berlin /etc/localtime
+hwclock --systohc
+
+sed -i 's/^#de_DE.UTF-8 UTF-8/de_DE.UTF-8 UTF-8/' /etc/locale.gen
+locale-gen
+
+echo "LANG=de_DE.UTF-8" > /etc/locale.conf
+echo "KEYMAP=de-latin1" > /etc/vconsole.conf
+
+echo "archzfs" > /etc/hostname
+
+cat <<EOF >> /etc/hosts
+127.0.0.1 localhost
+::1 localhost
+127.0.1.1 archzfs.localdomain archzfs
+EOF
+
+Setup systemd-boot
+==================
+bootctl install
+
+Install AUR ZFS Hook
+====================
+# Step 1: Create minimal unprivileged user (no home, no shell)
+useradd -M -s /usr/bin/nologin builduser
+
+# Step 2: Create a build directory owned by the user
+mkdir -p /tmp/build-aur
+chown builduser:builduser /tmp/build-aur
+
+# Step 3: Clone and build the package as builduser
+su - builduser -s /bin/sh -c "
+cd /tmp/build-aur &&
+git clone https://aur.archlinux.org/mkinitcpio-sd-zfs-poscat.git &&
+cd mkinitcpio-sd-zfs-poscat &&
+makepkg -s --noconfirm
+"
+
+# Step 4: Install the package as root
+pacman -U /tmp/build-aur/mkinitcpio-sd-zfs-poscat/*.pkg.tar.zst --noconfirm
+
+# Step 5: Set hostid for ZFS
+zgenhostid $(hostid)
+
+# Step 6: Cleanup
+userdel builduser
+rm -rf /tmp/build-aur
+
+Configure mkinitcpio
+====================
+Edit /etc/mkinitcpio.conf:
+MODULES=(crc32c)
+HOOKS=(systemd sd-zfs autodetect microcode kms modconf block keyboard keymap consolefont plymouth filesystems)
+
+Edit /etc/mkinitcpio.d/linux-lts.preset:
+ALL_kver="/boot/vmlinuz-linux-lts"
+PRESETS=('default' 'fallback')
+
+default_uki="/efi/EFI/Linux/zfs-arch-linux.efi"
+
+fallback_uki="/efi/EFI/Linux/zfs-arch-linux-fallback.efi"
+fallback_options="-S autodetect"
+
+Create kernel cmdline:
+echo "root=zfs:rpool/ROOT/arch zfs_force=1 rw zswap.enabled=0 nowatchdog quiet splash loglevel=3 systemd.show_status=auto rd.udev.log_level=3" > /etc/kernel/cmdline
+
+Generate UKI
+============
+mkinitcpio -p linux-lts
+
+Configure systemd-boot
+======================
+Create /efi/loader/loader.conf:
+timeout 0
+console-mode keep
+editor 1
+
+➡️ The UKI entries will be auto-detected in /efi/EFI/Linux/.
+
+Final Setup
+===========
+passwd
+
+systemctl enable zfs.target
+systemctl enable zfs-import.target
+systemctl enable zfs-mount.service
+
+pacman -S plasma gdm sudo pipewire
+systemctl enable gdm.service
+systemctl enable NetworkManager.service
+
+useradd -m -G wheel -s /bin/bash username
+passwd username
+echo "%wheel ALL=(ALL:ALL) ALL" >> /etc/sudoers
+
+exit
+
+Unmount and Reboot
+==================
+umount -l -R /mnt
+zfs unmount -a
+zpool export rpool
+reboot
+
+🎉 Your Arch Linux system is now booting ZFS as root using systemd-boot, linux-lts, and a modern UKI setup.
