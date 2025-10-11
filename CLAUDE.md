@@ -77,9 +77,22 @@ output_text -P -l success "Operation completed successfully"
 output_text -P -l warning "Potential issue detected"
 output_text -P -l error "Operation failed"
 
-# For internal error logging
-err "Internal error message"  # Goes to stderr with timestamp
+# For internal error logging (trap handlers, cleanup)
+err "Internal error message"  # Auto-uses output_internal() when available
+# Or use directly:
+output_internal "Low-level system event"  # [YYYY-MM-DD HH:MM:SS]: message
 ```
+
+**Logging Level Guidelines:**
+
+| Function | Use Case | Format | Color | Reliability |
+|----------|----------|--------|-------|-------------|
+| `output_info()` | User notifications | `[INFO] msg` | Blue | Normal |
+| `output_success()` | Confirmations | `[SUCCESS] msg` | Green | Normal |
+| `output_warning()` | Non-critical issues | `[WARNING] msg` | Yellow | Normal |
+| `output_error()` | User-facing errors | `[ERROR] msg` | Red | Normal |
+| `output_internal()` | Trap/cleanup logging | `[YYYY-MM-DD HH:MM:SS]: msg` | None | High |
+| `err()` | Enhanced wrapper | Auto-detects library | None | Maximum |
 
 ### 4. ZFS Best Practices
 
@@ -117,20 +130,43 @@ Every function that performs critical operations must:
 4. **Return meaningful exit codes** (0 = success, non-zero = failure)
 5. **Log errors to stderr** with context and timestamps
 
+**Choosing the Right Logging Function:**
+
+```bash
+# User-facing errors (validation, configuration)
+if [[ ! -f "${config_file}" ]]; then
+  output_text -P -l error "Configuration file not found: ${config_file}"
+  return 1
+fi
+
+# Internal errors (trap handlers, cleanup, low-level)
+if [[ ! -b "${disk}" ]]; then
+  err "Disk ${disk} does not exist"  # Auto-fallback to printf if lib fails
+  return 1
+fi
+
+# Direct library use (when library is known to be loaded)
+if ! zpool create ...; then
+  output_internal "Failed to create pool ${pool_name}"
+  return 1
+fi
+```
+
 **Example Pattern:**
 ```bash
 create_zfs_pool() {
   local disk="$1"
   local pool_name="$2"
 
-  # Validate
+  # Validate with user-facing error
   if [[ ! -b "${disk}" ]]; then
-    err "Disk ${disk} does not exist"
+    output_text -P -l error "Invalid disk: ${disk}"
     return 1
   fi
 
   # Execute with error checking
   if ! zpool create ...; then
+    # Internal error logging (trap-safe)
     err "Failed to create pool ${pool_name}"
     return 1
   fi
@@ -138,6 +174,8 @@ create_zfs_pool() {
   # Track for cleanup
   pools_created+=("${pool_name}")
 
+  # Success confirmation
+  output_text -P -l success "Pool ${pool_name} created successfully"
   return 0
 }
 ```

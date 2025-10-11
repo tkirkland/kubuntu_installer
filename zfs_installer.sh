@@ -3,27 +3,38 @@
 
 set -Eeuo pipefail
 
-# Linux ZFS Root Install with systemd-boot + UKI (using LTS ISO)
+# Linux ZFS Root Install with systemd-boot
 # This script automates the steps from instruct.txt
 # WARNING: This will ERASE the selected disk.
 
 # ============================================================================
 # GLOBAL STATE TRACKING
 # ============================================================================
-declare -g cleanup_in_progress=0 chroot_active=0 script_dir="" _txt
+declare -g cleanup_in_progress=0
+declare -g chroot_active=0
+declare -g script_dir=""
+declare -g _txt
 declare -ga pools_created=()
+declare -g disk
+declare -g user_name
+declare -g host_name="hostname"
+declare -g pool_name="zroot"
+declare -g swap_size="4"
+declare -g time_zone="UTC"
+declare -g kernel="linux"
 
 #######################################
-# Print error message to stderr
+# Print error message to stderr with timestamp
+# Uses output_internal() from string_output.sh
 # Globals:
 #   None
 # Arguments:
 #   Error message
 # Outputs:
-#   Writes error to stderr
+#   Writes error to stderr with format: [YYYY-MM-DD HH:MM:SS]: message
 #######################################
 err() {
-  printf "[%s]: %s\n" "$(date +'%Y-%m-%d %H:%M:%S')" "$*" >&2
+    output_internal "$*"
 }
 
 #######################################
@@ -90,7 +101,7 @@ cleanup() {
     err "ERROR: Cleanup triggered from within chroot (exit code: ${exit_code})"
     err "ERROR: Manual cleanup required"
     chroot_active=0
-    exit ${exit_code}
+    exit "${exit_code}"
   fi
 
   # Only cleanup on error
@@ -138,7 +149,7 @@ cleanup() {
     output_text -P -l success "Emergency cleanup completed."
   fi
 
-  exit ${exit_code}
+  exit "${exit_code}"
 }
 
 #######################################
@@ -193,7 +204,7 @@ part_name() {
 #  None
 # Returns:
 #  0 - All present
-#  1 - If ne or more missing
+#  1 - If one or more missing
 #######################################
 # shellcheck disable=SC1091
 verify_libs_exist() {
@@ -212,14 +223,53 @@ verify_libs_exist() {
     source "${lib_dir}${lib}"
   done
 }
+
+#######################################
+# Parse command line arguments
+# Globals:
+#   disk, user_name, host_name, pool_name, swap_size, timezone, kernel
+# Arguments:
+#   Command line arguments
+#######################################
+parse_args() {
+  local opt
+  while getopts "d:u:h:p:s:t:k:" opt; do
+    case $opt in
+      d) disk="$OPTARG" ;;
+      u) user_name="$OPTARG" ;;
+      h) host_name="$OPTARG" ;;
+      p) pool_name="$OPTARG" ;;
+      s) swap_size="$OPTARG" ;;
+      t) time_zone="$OPTARG" ;;
+      k) kernel="$OPTARG" ;;
+      *) return 1 ;;
+    esac
+  done
+}
+
+#######################################
+# Validate disk parameter if provided via CLI
+# Globals:
+#   disk
+# Arguments:
+#   None
+#######################################
+validate_params() {
+  # Only validate the disk if it was provided via command line
+  if [[ -n ${disk:-} ]] && [[ ! -b ${disk} ]]; then
+    output_text -P -l error "Invalid disk device: ${disk}"
+    exit 1
+  fi
+}
+
 #######################################
 # Main code thread
 # Arguments:
-#  None
+#   Command line arguments
 #######################################
 main() {
   # Get script directory
-  local boot_part root_part disk partuuid username
+  local boot_part root_part disk partuuid
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   readonly script_dir
 
@@ -232,8 +282,15 @@ main() {
   trap 'err_handler ${LINENO} $?' ERR
   trap cleanup EXIT INT TERM HUP
 
+  # Load required libraries
+  verify_libs_exist
+
   # Check root access
   require_root
+
+  # Parse and validate arguments
+  parse_args "$@"
+  validate_params
 
   _txt="This script will perform a DESTRUCTIVE install to a target disk with ZFS root."
   _txt+=" Use this script ONLY in a Linux live ISO environment with network access."

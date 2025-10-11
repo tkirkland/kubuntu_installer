@@ -327,13 +327,25 @@ done
           prefix="${prefix:-[ERROR]}"
           color="${color:-red}"
           ;;
+    internal)
+          # Internal logging: full timestamp, no color for reliability
+          prefix="${prefix:-[INTERNAL]}"
+          color=""  # Disable color for internal logging
+          timestamp=1  # Force full timestamp for internal level
+          ;;
   esac
 
   # Add a timestamp if requested
   if [[ $timestamp -eq 1 ]]; then
     local ts
-    ts=$(date '+%H:%M:%S')
-    prefix="[$ts] $prefix"
+    # Use full timestamp format for internal level, short for others
+    if [[ $level == "internal" ]]; then
+      ts=$(date '+%Y-%m-%d %H:%M:%S')
+      prefix="[${ts}]"  # Replace prefix entirely for internal
+    else
+      ts=$(date '+%H:%M:%S')
+      prefix="[${ts}] ${prefix}"
+    fi
   fi
 
   # Process newlines in the text first
@@ -443,6 +455,15 @@ output_warning() { output_text -l warning "$@"; }
 #  None
 #######################################
 output_error() { output_text -l error "$@" >&2; }
+#######################################
+# Internal logging with full timestamp
+# For trap handlers, cleanup routines, and system-level debugging
+# Arguments:
+#   Error message
+# Outputs:
+#   Writes to stderr with format: [YYYY-MM-DD HH:MM:SS]: message
+#######################################
+output_internal() { output_text -l internal "$@" >&2; }
 
 # -----------------------------------------------------------------------------
 # Decorative Output Functions
@@ -703,6 +724,7 @@ output_library_info() {
   output_text "  * output_success  - Success messages"
   output_text "  * output_warning  - Warning messages"
   output_text "  * output_error    - Error messages"
+  output_text "  * output_internal - Internal logging (trap/cleanup)"
   output_text "  * output_box      - Box around text"
   output_text "  * output_header   - Section headers"
   output_text "  * output_table    - Formatted tables"
