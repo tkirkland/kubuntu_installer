@@ -2,12 +2,20 @@
 # shellcheck disable=SC2034
 # shellcheck shell=bash
 # =============================================================================
-# Text Handler Library v1.0.1
+# Text Handler Library v1.1.0
 # =============================================================================
 # A comprehensive Bash output library for text formatting, colors, and display
 #
 # Usage: source ./string_output.sh
 # License: MIT
+#
+# Changelog:
+#   v1.1.0 (2025-10-16)
+#     - Enhanced -P -w combination for professional wrapped output
+#     - Continuation lines now auto-indent under message content
+#     - First line skips indent when prefix is present
+#   v1.0.1
+#     - Initial documented release
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -115,23 +123,27 @@ process_newlines() {
 #   $1 - Text to wrap (may contain ANSI codes and \n sequences)
 #   $2 - Indentation width in spaces (default: 0)
 #   $3 - Maximum line width in columns (default: 79)
+#   $4 - Skip first line indent: 0=indent all, 1=skip first (default: 0)
 # Outputs:
 #   Word-wrapped text with indentation applied
 # Returns:
 #   0 - Success
 # Example:
 #   wrap_text "This is a long line that needs wrapping" 4 40
+#   wrap_text "Prefix: long text..." 8 79 1  # First line no indent
 #######################################
 wrap_text() {
   local text="$1"
   local indent="${2:-0}"
   local max_width="${3:-79}"
+  local skip_first="${4:-0}"
   local line_width=$((max_width - indent))
   local indent_str=""
   local result=""
   local line=""
   local word input_line
   local -a lines
+  local is_first_line=1
 
   # Process newlines first
   text=$(process_newlines "$text")
@@ -148,6 +160,7 @@ wrap_text() {
     # Preserve empty lines in output
     if [[ -z $input_line ]]; then
       result+=$'\n'
+      is_first_line=0
       continue
     fi
 
@@ -155,14 +168,27 @@ wrap_text() {
     local clean_line
     clean_line=$(strip_ansi "$input_line")
 
+    # Determine if we should indent this line
+    local current_indent=""
+    if [[ $skip_first -eq 1 ]] && [[ $is_first_line -eq 1 ]]; then
+      current_indent=""
+      # First line uses full width
+      line_width=$((max_width))
+    else
+      current_indent="$indent_str"
+      line_width=$((max_width - indent))
+    fi
+
     # If line fits within width, no wrapping needed
     if [[ ${#clean_line} -le $line_width ]]; then
-      result+="$indent_str$input_line"$'\n'
+      result+="$current_indent$input_line"$'\n'
+      is_first_line=0
       continue
     fi
 
     # Wrap long lines word by word
     line=""
+    local is_first_wrap_line=1
     for word in $clean_line; do
       local clean_word
       clean_word=$(strip_ansi "$word")
@@ -184,15 +210,29 @@ wrap_text() {
         fi
       else
         # Word doesn't fit, output current line and start new one
-        result+="$indent_str$line"$'\n'
+        # Apply indent logic for wrapped lines
+        if [[ $is_first_wrap_line -eq 1 ]] && [[ $skip_first -eq 1 ]] && [[ $is_first_line -eq 1 ]]; then
+          result+="$line"$'\n'
+          is_first_wrap_line=0
+          is_first_line=0
+          # Subsequent wrapped lines get indent
+          line_width=$((max_width - indent))
+        else
+          result+="$indent_str$line"$'\n'
+        fi
         line="$word"
       fi
     done
 
     # Output remaining text in line buffer
     if [[ -n $line ]]; then
-      result+="$indent_str$line"$'\n'
+      if [[ $is_first_wrap_line -eq 1 ]] && [[ $skip_first -eq 1 ]] && [[ $is_first_line -eq 1 ]]; then
+        result+="$line"$'\n'
+      else
+        result+="$indent_str$line"$'\n'
+      fi
     fi
+    is_first_line=0
   done
 
   # Remove trailing newline and output
@@ -326,6 +366,9 @@ align_text() {
 #   output_text -P -l success "Done"  # Colored prefix only
 #   output_text -w -W 60 "Long text that needs wrapping..."
 #   output_text -t -l internal "Cleanup completed"  # With timestamp
+#   output_text -P -w -l warning "Long message..."  # Auto-indent continuation
+#   # Output: [WARNING] Long message that wraps with
+#   #                   continuation lines aligned
 #######################################
 output_text() {
   local text=""
@@ -494,6 +537,15 @@ done
     if [[ $prefix_color_only -eq 1 ]]; then
       # Color only the prefix
       text="${style_code}${color_code}${prefix}${TH_RESET} ${text}"
+
+      # Auto-calculate indent for wrapping if -P and -w are both active
+      # This ensures continuation lines align with the message content
+      if [[ $wrap -eq 1 ]] && [[ $indent -eq 0 ]]; then
+        # Calculate visual width: prefix + space after it
+        local clean_prefix
+        clean_prefix=$(strip_ansi "$prefix")
+        indent=$((${#clean_prefix} + 1))
+      fi
     else
       # Color the entire line (original behavior)
       text="$prefix $text"
@@ -502,7 +554,12 @@ done
 
   # Apply text transformations after prefix is added
   if [[ $wrap -eq 1 ]]; then
-    text=$(wrap_text "$text" "$indent" "$max_width")
+    # For -P -w combination, skip indent on first line (prefix is already there)
+    local skip_first_indent=0
+    if [[ $prefix_color_only -eq 1 ]] && [[ $indent -gt 0 ]]; then
+      skip_first_indent=1
+    fi
+    text=$(wrap_text "$text" "$indent" "$max_width" "$skip_first_indent")
   elif [[ $truncate -eq 1 ]]; then
     text=$(truncate_text "$text" "$max_width")
   fi
@@ -984,9 +1041,9 @@ output_table() {
 #   output_library_info
 #######################################
 output_library_info() {
-  output_header "Text Handler Library v1.0.1"
+  output_header "Text Handler Library v1.1.0"
   output_text "A comprehensive Bash output library for text formatting"
-  output_separator
+  output_separator "─" 79
   output_text "Available functions:"
   output_text "  * output_text     - Main output function with options"
   output_text "  * output_info     - Information messages"

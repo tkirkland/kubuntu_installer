@@ -300,6 +300,12 @@ zfs create -o compression=lz4 -o mountpoint=/var/cache rpool/ROOT/linux/varcache
 output_text -P -l info "Starting disk partitioning..."
 output_text -P -l success "Partitioning completed successfully"
 
+# For long messages that wrap, use -w flag (auto-indents continuation)
+_txt="Long warning message that will wrap to multiple lines properly."
+output_text -P -w -l warning "${_txt}"
+# Output: [WARNING] Long warning message that will wrap to multiple lines
+#                   properly.
+
 # For errors that should stop execution
 if ! partition_disk "${disk}"; then
   output_text -P -l error "Disk partitioning failed"

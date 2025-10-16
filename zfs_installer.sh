@@ -299,7 +299,7 @@ main() {
 
   output_text -P -l info "Checking internet access..."
 
-  if ping -c 1 -W 2 archlinux.org > /dev/null 2>&1; then
+  if ! ping -c 1 -W 2 archlinux.org > /dev/null 2>&1; then
     _txt="Network connectivity confirmed."
     output_text -P -l success "${_txt}"
   else
