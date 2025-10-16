@@ -1,3 +1,4 @@
+#!/bin/bash
 # shellcheck disable=SC2034
 # shellcheck shell=bash
 # =============================================================================
@@ -45,21 +46,55 @@ readonly TH_BOX_R='┤'
 # Utility Functions
 # -----------------------------------------------------------------------------
 
+#######################################
 # Strip ANSI escape codes from text
+# Removes all color and formatting escape sequences from a string,
+# leaving only the plain text content. Useful for length calculations
+# and logging to files.
+# Arguments:
+#   $1 - Text containing ANSI escape codes
+# Outputs:
+#   Text with all ANSI codes removed
+# Returns:
+#   0 - Success
+#######################################
 strip_ansi() {
   echo -e "$1" | sed 's/\x1b\[[0-9;]*m//g'
 }
 
+#######################################
 # Get current terminal width
+# Detects the terminal width using tput if available, otherwise
+# defaults to 80 columns. Only works when stdout is a terminal.
+# Globals:
+#   None
+# Arguments:
+#   None
+# Outputs:
+#   Terminal width in columns
+# Returns:
+#   0 - Success
+#######################################
 get_terminal_width() {
   local width=80
+  # Check if stdout is a terminal and tput command exists
   if [[ -t 1 ]] && command -v tput > /dev/null 2>&1; then
     width=$(tput cols 2> /dev/null || echo 80)
   fi
   echo "$width"
 }
 
+#######################################
 # Process text to handle newline escapes properly
+# Converts literal \n escape sequences to actual newline characters.
+# This allows users to embed newlines in their text strings.
+# Arguments:
+#   $1 - Text potentially containing literal \n sequences
+# Outputs:
+#   Text with \n converted to actual newlines
+# Returns:
+#   0 - Success
+#######################################
 process_newlines() {
   local text="$1"
   # Convert literal \n to actual newlines
@@ -70,7 +105,23 @@ process_newlines() {
 # Text Manipulation Functions
 # -----------------------------------------------------------------------------
 
+#######################################
 # Word-wrap text at specified column
+# Wraps long text lines to fit within a specified width while
+# preserving ANSI color codes. Handles indentation, empty lines,
+# and word boundaries intelligently. ANSI codes are stripped for
+# length calculations but preserved in output.
+# Arguments:
+#   $1 - Text to wrap (may contain ANSI codes and \n sequences)
+#   $2 - Indentation width in spaces (default: 0)
+#   $3 - Maximum line width in columns (default: 79)
+# Outputs:
+#   Word-wrapped text with indentation applied
+# Returns:
+#   0 - Success
+# Example:
+#   wrap_text "This is a long line that needs wrapping" 4 40
+#######################################
 wrap_text() {
   local text="$1"
   local indent="${2:-0}"
@@ -85,6 +136,7 @@ wrap_text() {
   # Process newlines first
   text=$(process_newlines "$text")
 
+  # Build indentation string if needed
   if [[ $indent -gt 0 ]]; then
     printf -v indent_str "%${indent}s" ""
   fi
@@ -93,26 +145,30 @@ wrap_text() {
   mapfile -t lines <<< "$text"
 
   for input_line in "${lines[@]}"; do
-    # Preserve empty lines
+    # Preserve empty lines in output
     if [[ -z $input_line ]]; then
       result+=$'\n'
       continue
     fi
 
+    # Strip ANSI codes for length calculation
     local clean_line
     clean_line=$(strip_ansi "$input_line")
 
+    # If line fits within width, no wrapping needed
     if [[ ${#clean_line} -le $line_width ]]; then
       result+="$indent_str$input_line"$'\n'
       continue
     fi
 
+    # Wrap long lines word by word
     line=""
     for word in $clean_line; do
       local clean_word
       clean_word=$(strip_ansi "$word")
       local test_line
 
+      # Test if adding this word exceeds line width
       if [[ -z $line ]]; then
         test_line="$clean_word"
       else
@@ -120,26 +176,44 @@ wrap_text() {
       fi
 
       if [[ ${#test_line} -le $line_width ]]; then
+        # Word fits, add it to current line
         if [[ -z $line ]]; then
           line="$word"
         else
           line="$line $word"
         fi
       else
+        # Word doesn't fit, output current line and start new one
         result+="$indent_str$line"$'\n'
         line="$word"
       fi
     done
 
+    # Output remaining text in line buffer
     if [[ -n $line ]]; then
       result+="$indent_str$line"$'\n'
     fi
   done
 
+  # Remove trailing newline and output
   echo -n "${result%$'\n'}"
 }
 
+#######################################
 # Truncate text to a specified width
+# Cuts text that exceeds max_width and appends "..." to indicate
+# truncation. ANSI codes are stripped for length calculation but
+# preserved in output up to the truncation point.
+# Arguments:
+#   $1 - Text to truncate (may contain ANSI codes)
+#   $2 - Maximum width in columns (default: 79)
+# Outputs:
+#   Original text if it fits, or truncated text with "..." suffix
+# Returns:
+#   0 - Success
+# Example:
+#   truncate_text "This is a very long line" 10  # Output: "This is..."
+#######################################
 truncate_text() {
   local text="$1"
   local max_width="${2:-79}"
@@ -149,11 +223,27 @@ truncate_text() {
   if [[ ${#clean_text} -le $max_width ]]; then
     echo "$text"
   else
+    # Reserve 3 characters for "..." suffix
     echo "${text:0:$((max_width - 3))}..."
   fi
 }
 
+#######################################
 # Align text (left/center/right)
+# Aligns text within a specified width by adding padding spaces.
+# ANSI codes are stripped for length calculation but preserved in
+# the output. If text is longer than width, returns text as-is.
+# Arguments:
+#   $1 - Text to align (may contain ANSI codes)
+#   $2 - Alignment: "left", "center", or "right" (default: "left")
+#   $3 - Total width in columns (default: 79)
+# Outputs:
+#   Text aligned within the specified width
+# Returns:
+#   0 - Success
+# Example:
+#   align_text "Title" "center" 40  # Centers "Title" in 40 chars
+#######################################
 align_text() {
   local text="$1"
   local alignment="${2:-left}"
@@ -165,6 +255,7 @@ align_text() {
 
   case "$alignment" in
     center)
+      # Calculate padding for centering (rounds down if odd)
       padding=$(((width - text_len) / 2))
       if [[ $padding -gt 0 ]]; then
         printf "%${padding}s%s" "" "$text"
@@ -173,6 +264,7 @@ align_text() {
       fi
       ;;
     right)
+      # Calculate padding for right alignment
       padding=$((width - text_len))
       if [[ $padding -gt 0 ]]; then
         printf "%${padding}s%s" "" "$text"
@@ -181,6 +273,7 @@ align_text() {
       fi
       ;;
     left | *)
+      # Left alignment requires no padding
       echo "$text"
       ;;
   esac
@@ -191,26 +284,48 @@ align_text() {
 # -----------------------------------------------------------------------------
 
 #######################################
-# Main output function
+# Main output function with comprehensive formatting options
+# Provides a unified interface for all text output with support for
+# colors, styles, levels (info/success/warning/error/internal),
+# timestamps, wrapping, truncation, alignment, and file logging.
+# Supports both argument-based and stdin-based input.
+#
 # Globals:
-#   TH_BLUE
-#   TH_BOLD
-#   TH_CYAN
-#   TH_DIM
-#   TH_GREEN
-#   TH_MAGENTA
-#   TH_RED
-#   TH_RESET
-#   TH_UNDERLINE
-#   TH_WHITE
-#   TH_YELLOW
-#   th_use_color
-#   th_verbosity
+#   TH_BLUE, TH_GREEN, TH_YELLOW, TH_RED, TH_MAGENTA, TH_CYAN, TH_WHITE
+#   TH_BOLD, TH_DIM, TH_UNDERLINE, TH_RESET
+#   th_use_color - Enable/disable color output (1/0)
+#   th_verbosity - Control output verbosity (0=quiet, 1=normal)
+#
 # Arguments:
-#  None
+#   Multiple flags and options (see below), followed by text
+#   -c, --color <name>        Color: red|green|yellow|blue|magenta|cyan|white
+#   -s, --style <name>        Style: bold|dim|underline
+#   -l, --level <name>        Level: info|success|warning|error|internal
+#   -n, --no-newline          Suppress trailing newline
+#   -t, --timestamp           Add timestamp prefix
+#   -f, --file <path>         Also log to file (without colors)
+#   -w, --wrap                Enable word wrapping
+#   -W, --width <num>         Set maximum width (default: 79)
+#   -T, --truncate            Truncate long lines
+#   -a, --align <type>        Alignment: left|center|right
+#   -i, --indent <num>        Indentation width in spaces
+#   -p, --prefix <text>       Custom prefix text
+#   -P, --prefix-color-only   Color only the prefix, not entire line
+#   --                        Treat remaining args as text (stops parsing)
+#
+# Outputs:
+#   Formatted text to stdout (or stderr for error/internal levels)
+#
 # Returns:
-#   0 ...
-#   1 ...
+#   0 - Success
+#   1 - Error level was used, or invalid option
+#
+# Examples:
+#   output_text -l info "Starting process..."
+#   output_text -l error "Failed to connect" >&2
+#   output_text -P -l success "Done"  # Colored prefix only
+#   output_text -w -W 60 "Long text that needs wrapping..."
+#   output_text -t -l internal "Cleanup completed"  # With timestamp
 #######################################
 output_text() {
   local text=""
@@ -432,36 +547,79 @@ done
 # -----------------------------------------------------------------------------
 
 #######################################
-# description
+# Output informational message
+# Convenience wrapper for output_text with info level.
+# Displays message with [INFO] prefix in blue color.
 # Arguments:
-#  None
+#   $@ - Message text and any output_text options
+# Outputs:
+#   Formatted info message to stdout
+# Returns:
+#   0 - Success
+# Example:
+#   output_info "Processing configuration files..."
 #######################################
 output_info() { output_text -l info "$@"; }
+
 #######################################
-# description
+# Output success message
+# Convenience wrapper for output_text with success level.
+# Displays message with [SUCCESS] prefix in green color.
 # Arguments:
-#  None
+#   $@ - Message text and any output_text options
+# Outputs:
+#   Formatted success message to stdout
+# Returns:
+#   0 - Success
+# Example:
+#   output_success "Installation completed successfully"
 #######################################
 output_success() { output_text -l success "$@"; }
+
 #######################################
-# description
+# Output warning message
+# Convenience wrapper for output_text with warning level.
+# Displays message with [WARNING] prefix in yellow color.
 # Arguments:
-#  None
+#   $@ - Message text and any output_text options
+# Outputs:
+#   Formatted warning message to stdout
+# Returns:
+#   0 - Success
+# Example:
+#   output_warning "Disk space is running low"
 #######################################
 output_warning() { output_text -l warning "$@"; }
+
 #######################################
-# description
+# Output error message
+# Convenience wrapper for output_text with error level.
+# Displays message with [ERROR] prefix in red color to stderr.
 # Arguments:
-#  None
+#   $@ - Message text and any output_text options
+# Outputs:
+#   Formatted error message to stderr
+# Returns:
+#   1 - Always returns error code
+# Example:
+#   output_error "Failed to mount filesystem"
 #######################################
 output_error() { output_text -l error "$@" >&2; }
+
 #######################################
 # Internal logging with full timestamp
-# For trap handlers, cleanup routines, and system-level debugging
+# For trap handlers, cleanup routines, and system-level debugging.
+# Uses full timestamp format [YYYY-MM-DD HH:MM:SS] and no color
+# for maximum reliability in error conditions and log files.
 # Arguments:
-#   Error message
+#   $@ - Error message text
 # Outputs:
 #   Writes to stderr with format: [YYYY-MM-DD HH:MM:SS]: message
+# Returns:
+#   0 - Success
+# Example:
+#   output_internal "Cleanup handler triggered"
+#   output_internal "Pool export failed for rpool"
 #######################################
 output_internal() { output_text -l internal "$@" >&2; }
 
@@ -470,17 +628,23 @@ output_internal() { output_text -l internal "$@" >&2; }
 # -----------------------------------------------------------------------------
 
 #######################################
-# description
+# Draw a box around text
+# Creates a decorative box with Unicode box-drawing characters
+# around the provided text. Text is centered within the box.
 # Globals:
-#   TH_BOX_BL
-#   TH_BOX_BR
-#   TH_BOX_H
-#   TH_BOX_TL
-#   TH_BOX_TR
-#   TH_BOX_V
+#   TH_BOX_BL, TH_BOX_BR, TH_BOX_H, TH_BOX_TL, TH_BOX_TR, TH_BOX_V
 # Arguments:
-#   1
-#   2
+#   $1 - Text to display in box (may contain ANSI codes)
+#   $2 - Box width in characters (default: 77)
+# Outputs:
+#   Three-line box with centered text
+# Returns:
+#   0 - Success
+# Example:
+#   output_box "Important Notice" 50
+#   # ┌──────────────────────────────────────────────────┐
+#   # │            Important Notice                      │
+#   # └──────────────────────────────────────────────────┘
 #######################################
 output_box() {
   local text="$1"
@@ -488,38 +652,49 @@ output_box() {
   local clean_text
   clean_text=$(strip_ansi "$text")
   local text_len=${#clean_text}
+  # Calculate padding for centering (left and right may differ by 1)
   local padding=$(((width - text_len - 2) / 2))
   local right_pad=$((width - text_len - padding - 2))
 
+  # Draw top border
   printf "%s" "$TH_BOX_TL"
   printf "%${width}s" "" | tr ' ' "$TH_BOX_H"
   printf "%s\n" "$TH_BOX_TR"
 
+  # Draw middle with centered text
   printf "%s" "$TH_BOX_V"
   printf "%${padding}s" ""
   printf "%b" "$text"
   printf "%${right_pad}s" ""
   printf "%s\n" "$TH_BOX_V"
 
+  # Draw bottom border
   printf "%s" "$TH_BOX_BL"
   printf "%${width}s" "" | tr ' ' "$TH_BOX_H"
   printf "%s\n" "$TH_BOX_BR"
 }
 
 #######################################
-# description
+# Output a formatted section header
+# Creates a decorative header with cyan bold text inside a box,
+# with blank lines above and below for visual separation.
 # Globals:
-#   TH_BOLD
-#   TH_CYAN
-#   TH_RESET
+#   TH_BOLD, TH_CYAN, TH_RESET
 # Arguments:
-#   1
-#   2
+#   $1 - Header text
+#   $2 - Box width in characters (default: 77)
+# Outputs:
+#   Formatted header with surrounding blank lines
+# Returns:
+#   0 - Success
+# Example:
+#   output_header "Configuration Section"
 #######################################
 output_header() {
   local text="$1"
   local width="${2:-77}"
   local colored_text
+  # Apply cyan and bold formatting
   colored_text=$(printf "%b%b%b%b" "$TH_CYAN" "$TH_BOLD" "$text" "$TH_RESET")
   echo ""
   output_box "$colored_text" "$width"
@@ -527,10 +702,19 @@ output_header() {
 }
 
 #######################################
-# description
+# Output a horizontal separator line
+# Draws a line of repeating characters across the terminal.
+# Useful for visually separating sections of output.
 # Arguments:
-#   1
-#   2
+#   $1 - Character to use for line (default: ─)
+#   $2 - Line width in characters (default: 79)
+# Outputs:
+#   Horizontal line of specified character
+# Returns:
+#   0 - Success
+# Example:
+#   output_separator "=" 60
+#   # ============================================================
 #######################################
 output_separator() {
   local char="${1:-─}"
@@ -539,10 +723,20 @@ output_separator() {
 }
 
 #######################################
-# description
+# Indent text by specified spaces
+# Adds indentation to every line of the provided text.
+# Processes embedded \n sequences and preserves empty lines.
 # Arguments:
-#   1
-#   2
+#   $1 - Text to indent (may contain \n sequences)
+#   $2 - Indentation width in spaces (default: 4)
+# Outputs:
+#   Indented text with each line prefixed by spaces
+# Returns:
+#   0 - Success
+# Example:
+#   output_indent "Line 1\nLine 2" 8
+#   #         Line 1
+#   #         Line 2
 #######################################
 output_indent() {
   local text="$1"
@@ -552,7 +746,9 @@ output_indent() {
   # Process newlines first
   text=$(process_newlines "$text")
 
+  # Build indentation string
   printf -v indent_str "%${indent}s" ""
+  # Apply indentation to each line
   while IFS= read -r line; do
     echo "${indent_str}${line}"
   done <<< "$text"
@@ -563,28 +759,43 @@ output_indent() {
 # -----------------------------------------------------------------------------
 
 #######################################
-# description
+# Interactive confirmation prompt
+# Displays a yes/no prompt and waits for user input.
+# Supports default values indicated by uppercase letter in prompt.
+# Empty input (just pressing Enter) uses the default value.
 # Arguments:
-#   1
-#   2
+#   $1 - Prompt text
+#   $2 - Default value: "y" or "n" (default: "n")
+# Outputs:
+#   Prompt text in yellow with [Y/n] or [y/N] indicator
 # Returns:
-#   0 ...
-#   1 ...
+#   0 - User confirmed (answered yes)
+#   1 - User declined (answered no)
+# Example:
+#   if output_confirm "Delete all files?" "n"; then
+#     echo "Deleting..."
+#   else
+#     echo "Cancelled"
+#   fi
 #######################################
 output_confirm() {
   local prompt="$1"
   local default="${2:-n}"
   local response
 
+  # Display prompt with appropriate default indicator
   if [[ $default == "y" ]]; then
     output_text -c yellow -n "$prompt [Y/n] "
   else
     output_text -c yellow -n "$prompt [y/N] "
   fi
 
+  # Read user input
   read -r response
+  # Use default if user just pressed Enter
   response="${response:-$default}"
 
+  # Check response (case-insensitive)
   case "$response" in
     [yY] | [yY][eE][sS]) return 0 ;;
     *) return 1 ;;
@@ -596,51 +807,82 @@ output_confirm() {
 # -----------------------------------------------------------------------------
 
 #######################################
-# description
+# Animated spinner for background processes
+# Displays a rotating spinner character while a background process runs.
+# Automatically clears the spinner when the process completes.
+# Uses Unicode Braille pattern characters for smooth animation.
 # Arguments:
-#   1
-#   2
+#   $1 - PID of background process to monitor
+#   $2 - Message to display next to spinner (default: "Working")
+# Outputs:
+#   Animated spinner with message, updated every 0.1 seconds
+# Returns:
+#   0 - When process completes
+# Example:
+#   long_process &
+#   output_spinner $! "Processing files"
+# Note:
+#   Cursor is returned to line start after spinner clears
 #######################################
 output_spinner() {
   local pid=$1
   local message="${2:-Working}"
+  # Unicode Braille spinner characters for smooth animation
   local spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
   local i=0
 
+  # Loop while process is running
   while kill -0 "$pid" 2> /dev/null; do
     i=$(((i + 1) % ${#spin}))
     output_text -c cyan -n $'\r'"${spin:i:1} $message"
     sleep 0.1
   done
 
+  # Clear the spinner line
   output_text -n $'\r'
   printf "%$((${#message} + 3))s\r" ""
 }
 
 #######################################
-# Progress function
+# Progress bar with percentage
+# Displays a visual progress bar showing completion percentage.
+# Updates in place by overwriting the current line with \r.
+# Automatically adds newline when progress reaches 100%.
 # Arguments:
-#   1 - Progress x/total
-#   2 - Progress total
-#   3 - Text
+#   $1 - Current progress value
+#   $2 - Total/maximum value
+#   $3 - Message/label to display (default: "Progress")
+# Outputs:
+#   Progress bar: Message: [=====>    ] 45%
+# Returns:
+#   0 - Success
+# Example:
+#   for i in {1..100}; do
+#     output_progress "$i" 100 "Installing"
+#     sleep 0.1
+#   done
 #######################################
 output_progress() {
   local current=$1
   local total=$2
   local message="${3:-Progress}"
-  local width=40
+  local width=40  # Width of the progress bar in characters
   local percentage=$((current * 100 / total))
   local filled=$((current * width / total))
   local empty=$((width - filled))
 
+  # Draw progress bar: Message: [=====>    ] 75%
   printf "\r%s: [" "$message"
+  # Filled portion (equals signs)
   printf "%${filled}s" "" | tr ' ' '='
+  # Arrow at the leading edge (unless complete)
   if [[ $filled -lt $width ]]; then
     printf ">"
     printf "%$((empty - 1))s" ""
   fi
   printf "] %3d%%" "$percentage"
 
+  # Add newline when complete
   if [[ $current -eq $total ]]; then
     echo ""
   fi
@@ -651,15 +893,28 @@ output_progress() {
 # -----------------------------------------------------------------------------
 
 #######################################
-# description
+# Output a formatted table with borders
+# Creates a table with Unicode box-drawing characters.
+# First row is treated as header with separator line after it.
+# Columns are pipe-delimited (|). Column widths auto-adjust to
+# fit the widest content in each column. ANSI codes supported.
 # Globals:
-#   TH_BOX_CROSS
-#   TH_BOX_H
-#   TH_BOX_L
-#   TH_BOX_R
-#   TH_BOX_V
+#   TH_BOX_CROSS, TH_BOX_H, TH_BOX_L, TH_BOX_R, TH_BOX_V
 # Arguments:
-#  None
+#   $@ - Table rows as strings with pipe-delimited columns
+# Outputs:
+#   Formatted table with borders and auto-sized columns
+# Returns:
+#   0 - Success
+# Example:
+#   output_table \
+#     "Name|Age|City" \
+#     "Alice|30|NYC" \
+#     "Bob|25|LA"
+#   # │ Name  │ Age │ City │
+#   # ├───────┼─────┼──────┤
+#   # │ Alice │ 30  │ NYC  │
+#   # │ Bob   │ 25  │ LA   │
 #######################################
 output_table() {
   local -a rows=("$@")
@@ -667,24 +922,27 @@ output_table() {
   local num_cols=0
   local row cols i
 
-  # Calculate column widths
+  # First pass: Calculate column widths
   for row in "${rows[@]}"; do
     IFS='|' read -ra cols <<< "$row"
     num_cols=${#cols[@]}
     for i in "${!cols[@]}"; do
       local clean_col
+      # Strip ANSI codes for accurate width calculation
       clean_col=$(strip_ansi "${cols[$i]}")
       local len=${#clean_col}
+      # Track maximum width for each column
       if [[ -z ${col_widths[$i]} ]] || [[ $len -gt ${col_widths[$i]} ]]; then
         col_widths[i]=$len
       fi
     done
   done
 
-  # Output table
+  # Second pass: Output table with borders
   local is_header=1
   for row in "${rows[@]}"; do
     IFS='|' read -ra cols <<< "$row"
+    # Draw row with vertical separators
     printf "%s " "$TH_BOX_V"
     for i in "${!cols[@]}"; do
       printf "%-${col_widths[$i]}s" "${cols[$i]}"
@@ -694,10 +952,11 @@ output_table() {
     done
     printf " %s\n" "$TH_BOX_V"
 
-    # Draw separator after header
+    # Draw separator after header row
     if [[ $is_header -eq 1 ]]; then
       printf "%s" "$TH_BOX_L"
       for i in "${!col_widths[@]}"; do
+        # Horizontal line for each column
         printf "%$((col_widths[i] + 2))s" "" | tr ' ' "$TH_BOX_H"
         if [[ $i -lt $((num_cols - 1)) ]]; then
           printf "%s" "$TH_BOX_CROSS"
@@ -710,9 +969,19 @@ output_table() {
 }
 
 #######################################
-# description
+# Display library information and usage
+# Shows a formatted summary of the library's capabilities
+# and available functions. Useful for documentation and help.
+# Globals:
+#   None
 # Arguments:
-#  None
+#   None
+# Outputs:
+#   Formatted library information with function list
+# Returns:
+#   0 - Success
+# Example:
+#   output_library_info
 #######################################
 output_library_info() {
   output_header "Text Handler Library v1.0.1"
@@ -740,16 +1009,23 @@ output_library_info() {
 # -----------------------------------------------------------------------------
 
 #######################################
-# description
+# Initialize the text handler library
+# Sets up default configuration, detects terminal capabilities
+# (color support and width), and prevents multiple initialization.
+# Called automatically when the library is sourced.
 # Globals:
-#   text_handler_loaded
-#   th_term_width
-#   th_use_color
-#   th_verbosity
+#   text_handler_loaded - Marks library as initialized
+#   th_term_width - Detected or default terminal width (80)
+#   th_use_color - Enable color output (1) or disable (0)
+#   th_verbosity - Output verbosity level: 0=quiet, 1=normal
 # Arguments:
-#  None
+#   None
 # Returns:
-#   0 ...
+#   0 - Initialization successful or already initialized
+# Side Effects:
+#   - Sets pipefail option for better error handling
+#   - Detects and configures terminal color support
+#   - Measures terminal width with tput if available
 #######################################
 _init_text_handler() {
   local text_handler_loaded
@@ -758,41 +1034,59 @@ _init_text_handler() {
     return 0
   fi
 
-  # Mark as loaded
+  # Mark as loaded (readonly prevents re-initialization)
   readonly text_handler_loaded=1
 
-  # Set default configuration
-  : "${th_verbosity:=1}"
-  : "${th_use_color:=1}"
-  : "${th_term_width:=80}"
+  # Set default configuration values
+  : "${th_verbosity:=1}"      # Normal verbosity by default
+  : "${th_use_color:=1}"      # Colors enabled by default
+  : "${th_term_width:=80}"    # Standard 80-column default
 
-  # Auto-detect color support
+  # Auto-detect color support and terminal width
   if [[ -t 1 ]] && command -v tput > /dev/null 2>&1; then
     local colors
     colors=$(tput colors 2> /dev/null || echo 0)
+    # Enable color if terminal supports at least 8 colors
     if [[ $colors -ge 8 ]]; then
       th_use_color=1
     else
       th_use_color=0
     fi
 
-    # Get terminal width
+    # Get actual terminal width
     th_term_width=$(tput cols 2> /dev/null || echo 80)
   else
+    # Not a terminal or tput unavailable - disable colors
     th_use_color=0
   fi
 
-  # Set pipefail for better error handling
+  # Enable pipefail for better error handling in pipes
   set -o pipefail
 }
 
 # -----------------------------------------------------------------------------
-# Main
+# Main Entry Point
 # -----------------------------------------------------------------------------
-# Check if the script is being sourced or executed
+
+#######################################
+# Main entry point - source detection and initialization
+# Checks if the script is being sourced (correct) or executed (error).
+# Libraries must be sourced, not executed, so they integrate into
+# the calling script's environment.
+# Globals:
+#   BASH_SOURCE - Array of source filenames
+# Arguments:
+#   None
+# Outputs:
+#   Error message if executed instead of sourced
+# Returns:
+#   0 - When sourced correctly
+# Exits:
+#   1 - When executed directly (with usage instructions)
+#######################################
 main() {
   if [[ ${BASH_SOURCE[0]} == "${0}" ]]; then
-    # Script is being executed directly
+    # Script is being executed directly - this is an error
     echo "Error: This is a library file and should be sourced, not executed." >&2
     echo "" >&2
     echo "Usage: source ${BASH_SOURCE[0]}" >&2
@@ -800,11 +1094,14 @@ main() {
     echo "" >&2
     echo "Example:" >&2
     echo "  #!/bin/bash" >&2
-    echo "  source ./text_handler.sh" >&2
+    echo "  source ./string_output.sh" >&2
     echo "  output_success 'Library loaded!'" >&2
     exit 1
   else
-    # Script is being sourced
+    # Script is being sourced - initialize library
     _init_text_handler
   fi
 }
+
+# Execute main to perform initialization or error handling
+main
