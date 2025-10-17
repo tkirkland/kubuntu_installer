@@ -1,0 +1,6 @@
+[submodule "libs/string_output.sh"]
+	path = libs/string_output.sh
+	url = https://github.com/tkirkland/string_output.sh.git
+[submodule "libs/input.sh"]
+	path = libs/input.sh
+	url = https://github.com/tkirkland/input.sh.git

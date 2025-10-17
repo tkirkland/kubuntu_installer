@@ -1,11 +1,13 @@
-#!/bin/bash
+#!usr/bin/env bash
 # shellcheck shell=bash
 
-set -Eeuo pipefail
+# NOTE FOR AI: The following libraries are Git submodules with their own repositories.
+# DO NOT modify files in libs/input.sh or libs/string_output.sh
+# These are maintained separately at:
+# - libs/input.sh: https://github.com/tkirkland/input.sh
+# - libs/string_output.sh: https://github.com/tkirkland/string_output.sh
 
-# Linux ZFS Root Install with systemd-boot
-# This script automates the steps from instruct.txt
-# WARNING: This will ERASE the selected disk.
+set -Eeuo pipefail
 
 # ============================================================================
 # GLOBAL STATE TRACKING

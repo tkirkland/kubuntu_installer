@@ -101,3 +101,6 @@ fabric.properties
 
 # Local tool configuration
 .serena/
+
+# Project config files (Intellij)
+/*.iml
