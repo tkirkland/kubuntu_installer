@@ -49,14 +49,34 @@ Boot from a Linux live ISO with ZFS support (e.g., Arch Linux LTS ZFS ISO):
 
 ### Basic Installation
 
+**⚠️ Important**: This project uses Git submodules for external libraries. You must clone with submodules or initialize them manually.
+
+**Option 1: Clone with submodules (recommended)**
 ```bash
-# Download the repository
-git clone <repository-url>
+# Clone repository with all submodules
+git clone --recursive https://github.com/tkirkland/kubuntu_installer.git
 cd kubuntu_installer
 
 # Run the installer (as root)
 sudo ./zfs_installer.sh
 ```
+
+**Option 2: Clone then initialize submodules**
+```bash
+# Standard clone
+git clone https://github.com/tkirkland/kubuntu_installer.git
+cd kubuntu_installer
+
+# Initialize and update submodules
+git submodule update --init --recursive
+
+# Run the installer (as root)
+sudo ./zfs_installer.sh
+```
+
+**Submodule Libraries:**
+- `libs/input.sh` - Controlled input library (https://github.com/tkirkland/input.sh)
+- `libs/string_output.sh` - Output formatting library (https://github.com/tkirkland/string_output.sh)
 
 ### Manual Installation
 
@@ -116,15 +136,20 @@ bash -n zfs_installer.sh
 kubuntu_installer/
 ├── zfs_installer.sh          # Main installer script
 ├── installer.sh              # Simplified installer
-├── libs/                     # Shared libraries
-│   └── string_output.sh      # Output formatting
+├── libs/                     # Shared libraries (Git submodules)
+│   ├── input.sh/             # Controlled input library (submodule)
+│   └── string_output.sh/     # Output formatting library (submodule)
 ├── calamares/                # Calamares configuration
 │   ├── modules/              # Module configs
 │   ├── branding/             # Branding assets
 │   └── settings.conf         # Main settings
 ├── docs/                     # Documentation
+│   ├── git-submodules.md     # Submodule management guide
+│   └── ...                   # Other documentation
 └── instruct.txt              # Manual instructions
 ```
+
+**Note**: Files in `libs/` are Git submodules maintained in separate repositories. Do not modify these files directly.
 
 ## Contributing
 

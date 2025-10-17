@@ -344,12 +344,45 @@ trap cleanup EXIT INT TERM HUP
 
 ### Library Architecture
 
+**Git Submodules for External Libraries:**
+
+The project uses Git submodules to manage external library dependencies:
+
+```bash
+libs/
+├── input.sh/          # https://github.com/tkirkland/input.sh
+└── string_output.sh/  # https://github.com/tkirkland/string_output.sh
+```
+
+**⚠️ CRITICAL: Never Modify Submodule Files**
+- These libraries are maintained in separate repositories
+- Do not edit files within `libs/input.sh/` or `libs/string_output.sh/`
+- Changes must be made in the upstream repositories
+
+**Cloning the Project:**
+```bash
+# Always clone with submodules
+git clone --recursive https://github.com/tkirkland/kubuntu_installer.git
+
+# Or initialize after standard clone
+git submodule update --init --recursive
+```
+
+**Library Capabilities:**
+
 `libs/string_output.sh` provides:
-- Consistent output formatting
+- Consistent output formatting with `output_text`
 - Color management with ANSI codes
 - Box drawing and tables
 - Text wrapping and alignment
+- Internal logging with `output_internal()`
 - Separation of concerns (presentation vs. logic)
+
+`libs/input.sh` provides:
+- Controlled user input with validation
+- Cursor management and navigation
+- Input sanitization and type checking
+- Interactive prompts and confirmations
 
 ## Project-Specific Personas
 
@@ -377,8 +410,8 @@ When working on this project, adopt these mindsets:
 
 ### File Locations
 - **Main scripts**: `./zfs_installer.sh`, `./installer.sh`
-- **Libraries**: `./libs/string_output.sh`
-- **Documentation**: `./docs/`
+- **Libraries** (Git submodules): `./libs/input.sh/`, `./libs/string_output.sh/`
+- **Documentation**: `./docs/` (including `docs/git-submodules.md`)
 - **Calamares config**: `./calamares/`
 - **Manual instructions**: `./instruct.txt`
 
@@ -390,9 +423,11 @@ When working on this project, adopt these mindsets:
 - **Boot mode**: UEFI with systemd-boot
 
 ### Critical Files to Never Modify Carelessly
-- `libs/string_output.sh` (used by multiple scripts)
-- Calamares `settings.conf` (module sequence order matters)
-- `.editorconfig` (ensures consistent formatting)
+- **`libs/input.sh/`** - Git submodule, maintained in upstream repository
+- **`libs/string_output.sh/`** - Git submodule, maintained in upstream repository
+- **`.gitmodules`** - Submodule configuration (URLs, paths)
+- **Calamares `settings.conf`** - Module sequence order matters
+- **`.editorconfig`** - Ensures consistent formatting
 
 ## Integration with SuperClaude Framework
 
